@@ -1,6 +1,7 @@
 #include "ShenSiDongle.h"
 #include "ss_lm_runtime.h" 
 #include <QTest>
+#include <QCryptographicHash>
 /*
 * 解决提示： VS2015 及以上版本编译失败，提示无法解析的外部符号 __iob_func()。
 *            由于编译器版本引起的问题。
@@ -56,6 +57,14 @@ void ShenSiDongle::dongleInit()
 	}
 }
 
+QByteArray ShenSiDongle::calHash(const QString& sn)
+{
+	QByteArray result;
+	QString password = sn + "jinwanjiajitui * 10";
+	result = QCryptographicHash::hash(password.toUtf8(), QCryptographicHash::Sha256).toHex();
+	return result;
+}
+
 void ShenSiDongle::write()
 {
 	SS_CHAR* testWrite = "12345";
@@ -69,14 +78,64 @@ void ShenSiDongle::write()
 	}
 
 	iOffset = 0;
+	//清空
+	char clear[256]{ '\0' };
+	ret = slm_user_data_write(m_handle, (SS_BYTE*)clear, iOffset, 256);
+	if (SS_OK != ret)
+	{
+		QFAIL("slm_user_data_getsize[RAW] error");
+	}
+	//写入数据
 	ret = slm_user_data_write(m_handle, (SS_BYTE*)testWrite, iOffset, 5);
+	if (SS_OK != ret)
+	{
+		QFAIL("slm_user_data_getsize[RAW] error");
+	}
 }
 
 void ShenSiDongle::read()
 {
 	SS_BYTE testdata[256]{ 0 };
 	SS_UINT32 ret = slm_user_data_read(m_handle, RAW, testdata, 0, 9);
-	QVERIFY2(QString("12345") == QString(QLatin1String((char*)testdata)),"slm_user_data_read[RAW][OFFSET] error");
+	QVERIFY2(QString("12345") == QString(QLatin1String((char*)testdata)), "slm_user_data_read[RAW][OFFSET] error");
+}
+
+void ShenSiDongle::encrypt()
+{
+	SS_UINT32 ulRAWLen = 0;
+	SS_UINT32 ret = slm_user_data_getsize(m_handle, RAW, &ulRAWLen);
+	SS_UINT32 iOffset = 0;
+
+	QByteArray md5 = calHash("sn12345");
+	if (SS_OK != ret)
+	{
+		QFAIL("slm_user_data_getsize[RAW] error");
+	}
+
+	iOffset = 0;
+
+	//清空
+	char clear[256]{ '\0' };
+	ret = slm_user_data_write(m_handle, (SS_BYTE*)clear, iOffset, 256);
+	if (SS_OK != ret)
+	{
+		QFAIL("slm_user_data_getsize[RAW] error");
+	}
+
+	//写入数据
+	ret = slm_user_data_write(m_handle, (SS_BYTE*)md5.data(), iOffset, md5.size());
+	if (SS_OK != ret)
+	{
+		QFAIL("slm_user_data_getsize[RAW] error");
+	}
+}
+
+void ShenSiDongle::decrypt()
+{
+	SS_BYTE testdata[256]{ 0 };
+	SS_UINT32 ret = slm_user_data_read(m_handle, RAW, testdata, 0, 255);
+	QByteArray get((char*)testdata);
+	QVERIFY2(get == calHash("sn12345"), "slm_user_data_read[RAW][OFFSET] error");
 }
 
 void ShenSiDongle::dongleDelete()
